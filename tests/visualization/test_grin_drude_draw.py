@@ -1,9 +1,15 @@
-"""Visualization tests for dispersive GRIN ray drawing."""
+"""WebAgg-backed 3D visualization test for dispersive GRIN ray tracing."""
 from __future__ import annotations
 
+from io import BytesIO
+
 import matplotlib
-import matplotlib.pyplot as plt
 import numpy as np
+from matplotlib.backends.backend_webagg_core import (
+    FigureCanvasWebAggCore as FigureCanvasWebAgg,
+)
+from matplotlib.figure import Figure
+from mpl_toolkits.mplot3d import Axes3D  # noqa: F401
 
 import optiland.backend as be
 from optiland.materials import GradientMaterial
@@ -16,14 +22,6 @@ SPEED_OF_LIGHT_UM_THz = 299.792458
 
 class DrudeGradientMaterial(GradientMaterial):
     """Test-only GRIN material with a Drude-like dispersive base index.
-
-    The visualization stack traces geometric rays, so this helper combines:
-
-    - a wavelength-dependent Drude-style baseline index, and
-    - a quadratic radial GRIN term for continuous ray bending.
-
-    This keeps the test self-contained while exercising `optic.draw()` with
-    dispersive GRIN propagation.
 
     Args:
         epsilon_inf: High-frequency dielectric constant.
@@ -53,9 +51,7 @@ class DrudeGradientMaterial(GradientMaterial):
         x = kwargs.get("x", 0.0)
         y = kwargs.get("y", 0.0)
         r_sq = x**2 + y**2
-
-        base_index = self._drude_index(wavelength)
-        return base_index + self.nr2 * r_sq
+        return self._drude_index(wavelength) + self.nr2 * r_sq
 
     def get_index_and_gradient(
         self,
@@ -70,9 +66,7 @@ class DrudeGradientMaterial(GradientMaterial):
         _ = z
 
         r_sq = x**2 + y**2
-        base_index = self._drude_index(wavelength)
-        n = base_index + self.nr2 * r_sq
-
+        n = self._drude_index(wavelength) + self.nr2 * r_sq
         dn_dx = 2.0 * self.nr2 * x
         dn_dy = 2.0 * self.nr2 * y
         dn_dz = be.zeros_like(dn_dx)
@@ -108,7 +102,7 @@ def _sample_gaussian_wavelengths(
 
 
 def _build_drude_grin_optic() -> tuple[Optic, list[float]]:
-    """Builds an oblique, parallel Gaussian-apodized beam test optic."""
+    """Builds the dispersive GRIN optic for the WebAgg 3D test."""
     wavelengths = _sample_gaussian_wavelengths()
     material = DrudeGradientMaterial(
         epsilon_inf=4.4,
@@ -147,10 +141,11 @@ def _build_drude_grin_optic() -> tuple[Optic, list[float]]:
     return optic, wavelengths
 
 
-def _max_linear_deviation(line) -> float:
+def _max_linear_deviation(
+    z_data: np.ndarray,
+    x_data: np.ndarray,
+) -> float:
     """Returns the maximum deviation from the line joining both endpoints."""
-    z_data = np.asarray(line.get_xdata(), dtype=float)
-    x_data = np.asarray(line.get_ydata(), dtype=float)
     mask = np.isfinite(z_data) & np.isfinite(x_data)
     z_data = z_data[mask]
     x_data = x_data[mask]
@@ -164,26 +159,101 @@ def _max_linear_deviation(line) -> float:
     return float(np.max(np.abs(x_data - x_linear)))
 
 
-def test_draw_drude_grin_oblique_gaussian_beam(set_test_backend):
-    """`draw()` should render dispersive GRIN paths for an angled Gaussian beam."""
-    optic, wavelengths = _build_drude_grin_optic()
+def _render_webagg_3d_image(
+    optic: Optic,
+    wavelengths: list[float],
+    output_path,
+) -> tuple[Figure, np.ndarray, int]:
+    """Renders traced GRIN rays onto a WebAgg-backed 3D figure."""
+    fig = Figure(figsize=(8, 6))
+    canvas = FigureCanvasWebAgg(fig)
+    ax = fig.add_subplot(111, projection="3d")
 
-    fig, ax = optic.draw(
-        wavelengths="all",
-        num_rays=7,
-        distribution="line_x",
-        projection="XZ",
-        title="Drude GRIN Gaussian beam draw test",
+    total_paths = 0
+    color_map = matplotlib.colormaps["plasma"]
+
+    for index, wavelength in enumerate(wavelengths):
+        rays = optic.trace(
+            8.0,
+            0.0,
+            wavelength,
+            num_rays=7,
+            distribution="line_x",
+            record_path=True,
+        )
+
+        assert rays.has_paths()
+        total_paths += len(rays.get_paths())
+        color = color_map(index / max(len(wavelengths) - 1, 1))
+
+        for ray_index, (x_path, y_path, z_path) in enumerate(rays.get_paths()):
+            if z_path.size < 3:
+                continue
+
+            alpha = 1.0
+            if rays.path_i and rays.path_i[ray_index]:
+                alpha = float(np.clip(np.mean(rays.path_i[ray_index]), 0.2, 1.0))
+
+            ax.plot(
+                z_path,
+                x_path,
+                y_path,
+                color=color,
+                alpha=alpha,
+                linewidth=1.2,
+            )
+
+    ax.set_xlabel("Z [mm]")
+    ax.set_ylabel("X [mm]")
+    ax.set_zlabel("Y [mm]")
+    ax.set_title("WebAgg 3D Drude GRIN Gaussian beam")
+    ax.view_init(elev=25.0, azim=-120.0)
+
+    canvas.draw()
+    rendered = np.asarray(canvas.buffer_rgba())
+
+    png_buffer = BytesIO()
+    canvas.print_png(png_buffer)
+    output_path.write_bytes(png_buffer.getvalue())
+
+    return fig, rendered, total_paths
+
+
+def test_webagg_forwards_drude_grin_3d_image(set_test_backend, tmp_path):
+    """WebAgg should forward a rendered 3D GRIN beam image."""
+    optic, wavelengths = _build_drude_grin_optic()
+    output_path = tmp_path / "webagg_drude_grin_gaussian_beam_3d.png"
+
+    fig, rendered, total_paths = _render_webagg_3d_image(
+        optic,
+        wavelengths,
+        output_path,
     )
 
-    ray_lines = [line for line in ax.get_lines() if len(line.get_xdata()) > 2]
+    assert total_paths >= len(wavelengths) * 7
+    assert rendered.ndim == 3
+    assert rendered.shape[-1] == 4
+    assert np.unique(rendered.reshape(-1, rendered.shape[-1]), axis=0).shape[0] > 1
+    assert output_path.exists()
+    assert output_path.stat().st_size > 0
 
-    assert len(ray_lines) >= len(wavelengths) * 7
-    assert max(len(line.get_xdata()) for line in ray_lines) > 20
-    assert len({line.get_color() for line in ray_lines}) >= len(wavelengths)
-    assert any(_max_linear_deviation(line) > 1e-3 for line in ray_lines)
+    for wavelength in wavelengths:
+        rays = optic.trace(
+            8.0,
+            0.0,
+            wavelength,
+            num_rays=7,
+            distribution="line_x",
+            record_path=True,
+        )
+        assert any(
+            _max_linear_deviation(z_path, x_path) > 1e-3
+            for x_path, _, z_path in rays.get_paths()
+            if z_path.size >= 3
+        )
+
+    ax = fig.axes[0]
     assert ax.get_xlabel() == "Z [mm]"
     assert ax.get_ylabel() == "X [mm]"
-    assert ax.get_title() == "Drude GRIN Gaussian beam draw test"
-
-    plt.close(fig)
+    assert ax.get_zlabel() == "Y [mm]"
+    assert ax.get_title() == "WebAgg 3D Drude GRIN Gaussian beam"
