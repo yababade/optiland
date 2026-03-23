@@ -221,6 +221,27 @@ class TestOpticViewer:
         assert ax.get_ylim() == custom_ylim
         plt.close(fig)
 
+    def test_draw_populates_supplied_axes(self, set_test_backend):
+        """optic.draw() should render onto a provided Matplotlib axis."""
+        lens = ReverseTelephoto()
+        fig, ax = plt.subplots()
+
+        returned_fig, returned_ax = lens.draw(
+            num_rays=5,
+            projection="YZ",
+            title="Draw smoke test",
+            ax=ax,
+        )
+
+        assert returned_fig is fig
+        assert returned_ax is ax
+        assert ax.get_title() == "Draw smoke test"
+        assert ax.get_xlabel() == "Z [mm]"
+        assert ax.get_ylabel() == "Y [mm]"
+        assert len(ax.get_lines()) > 0, "Expected draw() to render ray paths"
+        assert len(ax.patches) > 0, "Expected draw() to render optical surfaces"
+        plt.close(fig)
+
     def test_view_all_wavelengths(self, set_test_backend):
         lens = ReverseTelephoto()
         # Add a second wavelength to test "all"

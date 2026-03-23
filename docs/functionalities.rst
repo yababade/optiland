@@ -75,7 +75,9 @@ Visualization
 -------------
 
 - **Interactive 2D and 3D Visualization**:
-  Plot optical layouts, surface properties, and ray traces using Matplotlib (2D) and VTK (3D). The 2D plots are fully interactive, providing tooltips with detailed information when you hover over optical components.
+  Plot optical layouts, surface properties, and ray traces using Matplotlib (2D) and VTK (3D). In practice, ``draw()`` is the primary 2D layout command for quick inspection and notebook workflows, while ``draw3D()`` provides a richer spatial view when VTK-based rendering is needed. The 2D plots are fully interactive, providing tooltips with detailed information when you hover over optical components.
+- **Configurable ``draw()`` Layouts**:
+  The ``draw()`` workflow supports field and wavelength selection, multiple ray distributions, aperture overlays, projection changes, and Matplotlib axis reuse, making it suitable for both rapid debugging and publication-quality layout figures.
 - **Customizable Visualization Themes**:
   Optiland includes a flexible theme system to control the appearance of 2D plots. You can easily switch between predefined themes (e.g., ``light``, ``dark``) or create your own. For a hands-on example, see the :doc:`gallery/miscellaneous/themes` notebook.
 - **Optiland GUI**:
