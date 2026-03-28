@@ -18,6 +18,8 @@ from optiland.optic import Optic
 matplotlib.use("Agg")
 
 SPEED_OF_LIGHT_UM_THz = 299.792458
+OBLIQUE_FIELD_X = 8.0
+NORMALIZED_OBLIQUE_HX = 1.0
 
 
 class DrudeGradientMaterial(GradientMaterial):
@@ -133,7 +135,7 @@ def _build_drude_grin_optic() -> tuple[Optic, list[float]]:
     optic.set_aperture(aperture_type="EPD", value=2.5)
     optic.set_apodization("GaussianApodization", sigma=0.35)
     optic.set_field_type(field_type="angle")
-    optic.add_field(x=8.0, y=0.0)
+    optic.add_field(x=OBLIQUE_FIELD_X, y=0.0)
 
     for index, wavelength in enumerate(wavelengths):
         optic.add_wavelength(value=wavelength, is_primary=(index == 1))
@@ -174,7 +176,7 @@ def _render_webagg_3d_image(
 
     for index, wavelength in enumerate(wavelengths):
         rays = optic.trace(
-            8.0,
+            NORMALIZED_OBLIQUE_HX,
             0.0,
             wavelength,
             num_rays=7,
@@ -239,7 +241,7 @@ def test_webagg_forwards_drude_grin_3d_image(set_test_backend, tmp_path):
 
     for wavelength in wavelengths:
         rays = optic.trace(
-            8.0,
+            NORMALIZED_OBLIQUE_HX,
             0.0,
             wavelength,
             num_rays=7,
